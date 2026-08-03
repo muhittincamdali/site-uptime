@@ -1,0 +1,76 @@
+name: Site Uptime Check
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SITE: https://muhittincamdali.com
+    steps:
+      - name: Probe site (2 attempts)
+        id: probe
+        run: |
+          probe() {
+            HOME_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$SITE/" || echo 000)
+            HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$SITE/api/health/" || echo 000)
+            echo "home=$HOME_CODE health=$HEALTH_CODE"
+            [ "$HOME_CODE" = "200" ] && [ "$HEALTH_CODE" = "200" ]
+          }
+          if probe; then
+            echo "status=up" >> "$GITHUB_OUTPUT"
+          else
+            echo "First attempt failed; retrying in 30s..."
+            sleep 30
+            if probe; then
+              echo "status=up" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=down" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Handle DOWN (open or bump issue)
+        if: steps.probe.outputs.status == 'down'
+        run: |
+          set -e
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label outage --json number --jq '.[0].number // empty')
+          NOW=$(date -u +"%Y-%m-%d %H:%M UTC")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "🔴 Still DOWN at $NOW (home/health probe failed twice)."
+          else
+            BODY=$(printf '%s\n' \
+              "Uptime probe failed twice in a row at $NOW." \
+              "" \
+              "- Checked: \`$SITE/\` and \`$SITE/api/health/\`" \
+              "- Runbook: check Hetzner Console (billing/IP block!), \`hcloud primary-ip describe\` for \`Blocked:yes\`, then \`systemctl status portfolio-ssr\` via SSH." \
+              "- Past incident: 2026-07-23 non-payment IP block went unnoticed for 3.5 days — that is why this monitor exists.")
+            gh issue create --repo "$REPO" \
+              --title "🔴 SITE DOWN — muhittincamdali.com ($NOW)" \
+              --label outage \
+              --body "$BODY"
+          fi
+          exit 1
+
+      - name: Handle UP (close outage issue if any)
+        if: steps.probe.outputs.status == 'up'
+        run: |
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label outage --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            NOW=$(date -u +"%Y-%m-%d %H:%M UTC")
+            gh issue comment "$EXISTING" --repo "$REPO" --body "✅ RECOVERED at $NOW — site and health endpoint both 200."
+            gh issue close "$EXISTING" --repo "$REPO"
+          fi
