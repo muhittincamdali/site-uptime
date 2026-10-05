@@ -1,0 +1,33 @@
+name: Keepalive
+
+# GitHub, herkese açık depolarda 60 gün aktivite olmayınca zamanlanmış iş akışlarını kapatır.
+# "Site Uptime Check" bu yüzden 2 Eki 2026'da kendiliğinden kapandı. Ayda bir zaman damgası
+# dosyasını API ile güncellemek depoyu canlı tutar; üçüncü taraf action gerekmez ve
+# GITHUB_TOKEN ile atılan commit başka iş akışlarını tetiklemez.
+
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bump keepalive stamp
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          FILE=.github/keepalive
+          STAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          SHA=$(gh api "repos/$GITHUB_REPOSITORY/contents/$FILE" --jq .sha 2>/dev/null || true)
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$FILE" \
+            -f message="chore: keepalive $STAMP" \
+            -f content="$(printf '%s\n' "$STAMP" | base64)" \
+            ${SHA:+-f sha="$SHA"} > /dev/null
+          echo "keepalive: $STAMP"
