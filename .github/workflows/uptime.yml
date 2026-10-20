@@ -56,8 +56,8 @@ jobs:
               "Uptime probe failed twice in a row at $NOW." \
               "" \
               "- Checked: \`$SITE/\` and \`$SITE/api/health/\`" \
-              "- Runbook: check Hetzner Console (billing/IP block!), \`hcloud primary-ip describe\` for \`Blocked:yes\`, then \`systemctl status portfolio-ssr\` via SSH." \
-              "- Past incident: 2026-07-23 non-payment IP block went unnoticed for 3.5 days — that is why this monitor exists.")
+              "- Runbook: check the hosting console for an IP block (\`hcloud primary-ip describe\`, look for \`Blocked:yes\`), then \`systemctl status portfolio-ssr\` via SSH." \
+              "- Past incident: on 2026-07-23 an IP block went unnoticed for 3.5 days, which is why this monitor exists.")
             gh issue create --repo "$REPO" \
               --title "🔴 SITE DOWN — muhittincamdali.com ($NOW)" \
               --label outage \
